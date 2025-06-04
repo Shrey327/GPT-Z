@@ -1,0 +1,1 @@
+A minimal and educational implementation of a character-level transformer-based language model (GPT) using PyTorch. This project replicates the key components of OpenAI’s GPT architecture in a simplified and easy-to-understand format, inspired by karpathy/nanoGPT.
