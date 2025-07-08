@@ -1,47 +1,70 @@
 # GPT-Z
 
-A minimal and educational implementation of a character-level transformer-based language model (GPT) using PyTorch. This project implements the key components of self-attention mechanisms that form the foundation of transformer architectures like GPT.
+A minimal and educational implementation of transformer-based language model components using PyTorch. This project implements key components including self-attention mechanisms, multi-head attention, and BPE tokenization that form the foundation of transformer architectures like GPT.
 
 ## Project Structure
 
 ```
 GPT-Z/
 ├── Model/
-│   └── Model.py          # Self-attention implementations
+│   └── Model.py          # Attention implementations (Self, Masked, Multi-Head)
 ├── Tokenizer/
-│   └── Tokenizer.py      # Tokenization components (in development)
+│   └── Tokenizer.py      # BPE (Byte Pair Encoding) tokenizer implementation
 ├── BigramModel/
-│   └── Birgram.py        # Bigram model implementation (in development)
-├── main.py               # Main entry point
+│   └── Birgram.py        # Placeholder for bigram model (not implemented)
+├── main.py               # Main entry point (basic)
 ├── pyproject.toml        # Project configuration and dependencies
 └── README.md            # This file
 ```
 
 ## Model Architecture
 
-The current implementation includes foundational transformer components:
+The implementation includes comprehensive transformer components:
 
 ### SelfAttention Class
 - Implements basic self-attention mechanism
 - Uses Query (W_q), Key (W_k), and Value (W_v) linear transformations
 - Applies scaled dot-product attention
-- No masking applied - can see all positions
+- No masking applied - can attend to all positions
 
 ### MaskedSelfAttention Class  
 - Implements self-attention with causal masking
-- Prevents the model from looking at future tokens
+- Prevents the model from looking at future tokens during training
 - Essential for autoregressive language modeling
 - Uses masking to set future positions to very negative values before softmax
 
+### Attention Class (Encoder-Decoder)
+- General attention mechanism supporting different encodings for Q, K, and V
+- Supports optional masking for flexible attention patterns
+- Can be used for encoder-decoder architectures
+
+### MultiHeadAttention Class
+- Implements multi-head attention mechanism
+- Configurable number of attention heads
+- Concatenates outputs from multiple attention heads
+- Foundation for transformer block implementations
+
+## Tokenization
+
+### BPE Tokenizer Implementation
+- **✅ Complete BPE (Byte Pair Encoding) implementation**
+- Character-level vocabulary initialization
+- Iterative pair merging based on frequency
+- Configurable number of merge operations
+- Handles end-of-word tokens (`</w>`)
+- Vocabulary management and deduplication
+
 ## Features
 
-- ✅ Self-attention mechanism implementation
-- ✅ Masked self-attention for causal modeling
-- ✅ PyTorch-based for easy debugging and experimentation
-- ✅ Manual seed control for reproducibility
-- 🚧 Character-level tokenization (in development)
-- 🚧 Bigram baseline model (in development)
-- 🚧 Full transformer architecture (planned)
+- ✅ **Self-attention mechanism** - Basic attention without masking
+- ✅ **Masked self-attention** - Causal masking for autoregressive modeling  
+- ✅ **General attention** - Encoder-decoder style attention
+- ✅ **Multi-head attention** - Multiple parallel attention mechanisms
+- ✅ **BPE Tokenizer** - Complete Byte Pair Encoding implementation
+- ✅ **PyTorch-based** - Easy debugging and experimentation
+- ✅ **Manual seed control** - Reproducible results
+- ❌ **Bigram baseline model** - Not implemented (placeholder only)
+- 🚧 **Full transformer architecture** - Planned (attention mechanisms ready)
 
 ## Requirements
 
@@ -88,11 +111,11 @@ pip install torch>=2.7.0
 python main.py
 ```
 
-### Using the Self-Attention Components
+### Using the Attention Mechanisms
 
 ```python
 import torch
-from Model.Model import SelfAttention, MaskedSelfAttention
+from Model.Model import SelfAttention, MaskedSelfAttention, Attention, MultiHeadAttention
 
 # Example token encodings (3 tokens, 2-dimensional embeddings)
 encodings_matrix = torch.tensor([[1.16, 0.23], [0.57, 1.36], [4.41, -2.16]])
@@ -100,32 +123,82 @@ encodings_matrix = torch.tensor([[1.16, 0.23], [0.57, 1.36], [4.41, -2.16]])
 # Set seed for reproducibility
 torch.manual_seed(42)
 
-# Regular self-attention - can attend to all positions
+# 1. Regular self-attention - can attend to all positions
 self_attention = SelfAttention(d_model=2, row_dim=0, col_dim=1)
 output = self_attention(encodings_matrix)
-print("Self-attention output:")
-print(output)
+print("Self-attention output:", output)
 
-# Masked self-attention - causal masking for autoregressive modeling
+# 2. Masked self-attention - causal masking for autoregressive modeling
 masked_self_attention = MaskedSelfAttention(d_model=2, row_dim=0, col_dim=1)
-
-# Create causal mask (lower triangular matrix)
-mask = torch.tril(torch.ones(3, 3))
-mask = mask == 0  # True where we want to mask (upper triangle)
-
+mask = torch.tril(torch.ones(3, 3)) == 0  # Upper triangular mask
 output_masked = masked_self_attention(encodings_matrix, mask=mask)
-print("Masked self-attention output:")
-print(output_masked)
+print("Masked self-attention output:", output_masked)
+
+# 3. General attention (encoder-decoder style)
+attention = Attention(d_model=2, row_dim=0, col_dim=1)
+output_general = attention(encodings_matrix, encodings_matrix, encodings_matrix)
+print("General attention output:", output_general)
+
+# 4. Multi-head attention
+multi_head = MultiHeadAttention(d_model=2, row_dim=0, col_dim=1, num_heads=2)
+output_multi = multi_head(encodings_matrix, encodings_matrix, encodings_matrix)
+print("Multi-head attention output:", output_multi)
+```
+
+### Using the BPE Tokenizer
+
+```python
+# The tokenizer implementation is in Tokenizer/Tokenizer.py
+# It demonstrates BPE training on a small corpus:
+
+# Example corpus
+corpus = [
+    "This is the first document.",
+    "This document is the second document.",
+    "And this is the third one.",
+    "Is this the first document?",
+]
+
+# The implementation shows:
+# 1. Character-level vocabulary initialization
+# 2. Word splitting with end-of-word tokens
+# 3. Pair frequency counting
+# 4. Iterative merging of most frequent pairs
+# 5. Vocabulary expansion with merged tokens
+
+# Run the tokenizer:
+python Tokenizer/Tokenizer.py
 ```
 
 ## Development Status
 
-This is an educational project currently in early development:
+This is an educational project with the following implementation status:
 
-- **✅ Core attention mechanisms**: Basic and masked self-attention are implemented
-- **🚧 Tokenization**: Character-level tokenizer implementation in progress
-- **🚧 Bigram model**: Simple baseline model for comparison
-- **📅 Planned**: Full transformer blocks, positional encodings, training loop
+- **✅ Attention Mechanisms**: Complete implementation of self-attention, masked self-attention, general attention, and multi-head attention
+- **✅ BPE Tokenization**: Full working Byte Pair Encoding tokenizer with training and vocabulary management
+- **❌ Bigram Model**: Not implemented (placeholder file only)
+- **🚧 Transformer Blocks**: Individual components ready, need integration into full transformer architecture
+- **📅 Planned**: 
+  - Complete transformer block implementation
+  - Positional encodings
+  - Training loop
+  - Text generation functionality
+  - Model evaluation utilities
+
+## Code Structure Details
+
+### Attention Implementation Features
+- **Configurable dimensions**: Flexible row/column dimensions for matrix operations
+- **Optional masking**: Support for causal and custom masking patterns
+- **Scaled dot-product**: Proper scaling by √d_k for numerical stability
+- **Multiple heads**: Parallel attention computation with concatenation
+
+### BPE Tokenizer Features
+- **Frequency-based merging**: Merges most frequent adjacent character pairs
+- **Vocabulary tracking**: Maintains growing vocabulary with new tokens
+- **End-of-word handling**: Special `</w>` tokens for word boundaries
+- **Configurable merges**: Adjustable number of BPE merge operations
+- **Debugging output**: Detailed logging of merge process and statistics
 
 ## Contributing
 
@@ -145,12 +218,21 @@ This is an educational project currently in early development:
    ```
 6. Open a Pull Request
 
+## Learning Resources
+
+This implementation serves as an educational tool for understanding:
+- **Attention mechanisms** in transformer architectures
+- **BPE tokenization** used in modern language models
+- **PyTorch implementation** patterns for deep learning components
+- **Modular design** for ML system components
+
 ## Inspiration
 
 This implementation is inspired by educational resources including:
 - [karpathy/nanoGPT](https://github.com/karpathy/nanoGPT) - A minimal GPT implementation
 - Andrej Karpathy's neural network tutorials
 - "Attention Is All You Need" paper by Vaswani et al.
+- Hugging Face tokenizers documentation
 
 ## License
 
