@@ -17,6 +17,7 @@ class BPETokenizer:
         self.token_to_id = {}
         self.id_to_token = {}
         self.merges = {}
+        self.merge_order = {}  # Track merge priority order
         self.end_of_word = "</w>"
         
     def train(self, corpus: List[str]) -> None:
@@ -59,6 +60,7 @@ class BPETokenizer:
             new_token = best_pair[0] + best_pair[1]
             self.vocab.append(new_token)
             self.merges[best_pair] = new_token
+            self.merge_order[best_pair] = i  # Track merge priority
         
         # Create token mappings
         self.vocab = sorted(list(set(self.vocab)))
@@ -116,22 +118,26 @@ class BPETokenizer:
         return [self.token_to_id.get(token, 0) for token in tokens]
     
     def _apply_merges(self, tokens: List[str]) -> List[str]:
-        """Apply learned BPE merges to tokens"""
+        """Apply learned BPE merges to tokens in priority order"""
         while len(tokens) > 1:
-            # Find the best merge among current pairs
+            # Find the pair with highest priority (lowest order number) among current pairs
             best_pair = None
             best_index = -1
+            best_priority = float('inf')
+            
             for i in range(len(tokens) - 1):
                 pair = (tokens[i], tokens[i + 1])
-                if pair in self.merges:
-                    best_pair = pair
-                    best_index = i
-                    break
+                if pair in self.merge_order:
+                    priority = self.merge_order[pair]
+                    if priority < best_priority:
+                        best_priority = priority
+                        best_pair = pair
+                        best_index = i
             
             if best_pair is None:
                 break
             
-            # Perform the merge in-place style
+            # Perform the merge
             merged_token = self.merges[best_pair]
             new_tokens = tokens[:best_index] + [merged_token] + tokens[best_index + 2:]
             tokens = new_tokens
@@ -148,6 +154,7 @@ class BPETokenizer:
         data = {
             'vocab': self.vocab,
             'merges': {str(k): v for k, v in self.merges.items()},
+            'merge_order': {str(k): v for k, v in self.merge_order.items()},
             'token_to_id': self.token_to_id,
             'id_to_token': self.id_to_token,
             'vocab_size': self.vocab_size
@@ -162,6 +169,7 @@ class BPETokenizer:
         
         self.vocab = data['vocab']
         self.merges = {eval(k): v for k, v in data['merges'].items()}
+        self.merge_order = {eval(k): v for k, v in data.get('merge_order', {}).items()}
         self.token_to_id = data['token_to_id']
         self.id_to_token = {int(k): v for k, v in data['id_to_token'].items()}
         self.vocab_size = data['vocab_size']

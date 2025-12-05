@@ -113,7 +113,9 @@ class GPT(nn.Module):
     
     def _get_causal_mask(self, seq_len: int, device: torch.device) -> torch.Tensor:
         """Get causal mask from cache or create and cache it"""
-        cache_key = (seq_len, device)
+        # Use device string as cache key for efficient hashing
+        device_key = f"{device.type}:{device.index if device.index is not None else 0}"
+        cache_key = (seq_len, device_key)
         if cache_key not in self._mask_cache:
             self._mask_cache[cache_key] = torch.tril(torch.ones(seq_len, seq_len, device=device))
         return self._mask_cache[cache_key]
@@ -166,6 +168,9 @@ class GPT(nn.Module):
         generated[0, :len(prompt_tokens)] = torch.tensor(prompt_tokens, dtype=torch.long, device=device)
         current_len = len(prompt_tokens)
         
+        # Pre-compute effective top_k since vocab_size is constant
+        effective_top_k = min(top_k, self.vocab_size) if top_k is not None else None
+        
         with torch.no_grad():
             for _ in range(max_length):
                 if current_len >= max_total_len:
@@ -176,8 +181,8 @@ class GPT(nn.Module):
                 logits = logits[:, -1, :] / temperature
                 
                 # Apply top-k filtering if specified
-                if top_k is not None:
-                    top_k_logits, top_k_indices = torch.topk(logits, min(top_k, logits.size(-1)))
+                if effective_top_k is not None:
+                    top_k_logits, top_k_indices = torch.topk(logits, effective_top_k)
                     logits = torch.full_like(logits, float('-inf'))
                     logits.scatter_(1, top_k_indices, top_k_logits)
                 
