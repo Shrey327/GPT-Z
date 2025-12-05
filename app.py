@@ -97,6 +97,9 @@ class GPT(nn.Module):
         self.ln_f = nn.LayerNorm(d_model)
         self.head = nn.Linear(d_model, vocab_size, bias=False)
         
+        # Cache for causal masks to avoid recreating them
+        self._mask_cache = {}
+        
         # Initialize weights
         self.apply(self._init_weights)
     
@@ -108,6 +111,13 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
     
+    def _get_causal_mask(self, seq_len: int, device: torch.device) -> torch.Tensor:
+        """Get causal mask from cache or create and cache it"""
+        cache_key = (seq_len, device)
+        if cache_key not in self._mask_cache:
+            self._mask_cache[cache_key] = torch.tril(torch.ones(seq_len, seq_len, device=device))
+        return self._mask_cache[cache_key]
+    
     def create_causal_mask(self, seq_len: int) -> torch.Tensor:
         """Create causal mask for autoregressive generation"""
         mask = torch.tril(torch.ones(seq_len, seq_len))
@@ -117,8 +127,8 @@ class GPT(nn.Module):
         batch_size, seq_len = input_ids.shape
         device = input_ids.device
         
-        # Create causal mask (1 for allowed positions, 0 for masked)
-        mask = torch.tril(torch.ones(seq_len, seq_len, device=device))
+        # Get causal mask from cache (1 for allowed positions, 0 for masked)
+        mask = self._get_causal_mask(seq_len, device)
         
         # Token embeddings
         x = self.token_embedding(input_ids) * math.sqrt(self.d_model)
@@ -147,36 +157,44 @@ class GPT(nn.Module):
         self.eval()
         
         # Encode prompt
-        input_ids = torch.tensor([tokenizer.encode(prompt)], dtype=torch.long)
-        if torch.cuda.is_available():
-            input_ids = input_ids.cuda()
-            self.cuda()
+        prompt_tokens = tokenizer.encode(prompt)
+        device = next(self.parameters()).device
         
-        generated = input_ids.clone()
+        # Pre-allocate tensor for generated tokens to avoid repeated concatenation
+        max_total_len = min(len(prompt_tokens) + max_length, self.max_len)
+        generated = torch.zeros(1, max_total_len, dtype=torch.long, device=device)
+        generated[0, :len(prompt_tokens)] = torch.tensor(prompt_tokens, dtype=torch.long, device=device)
+        current_len = len(prompt_tokens)
         
         with torch.no_grad():
             for _ in range(max_length):
-                # Get predictions
-                logits, _ = self.forward(generated)
+                if current_len >= max_total_len:
+                    break
+                    
+                # Get predictions using only the current sequence
+                logits, _ = self.forward(generated[:, :current_len])
                 logits = logits[:, -1, :] / temperature
                 
                 # Apply top-k filtering if specified
                 if top_k is not None:
-                    top_k_logits, top_k_indices = torch.topk(logits, top_k)
+                    top_k_logits, top_k_indices = torch.topk(logits, min(top_k, logits.size(-1)))
                     logits = torch.full_like(logits, float('-inf'))
                     logits.scatter_(1, top_k_indices, top_k_logits)
                 
                 # Sample next token
                 probs = F.softmax(logits, dim=-1)
                 next_token = torch.multinomial(probs, num_samples=1)
-                generated = torch.cat([generated, next_token], dim=1)
+                
+                # Store the next token in the pre-allocated tensor
+                generated[0, current_len] = next_token.item()
+                current_len += 1
                 
                 # Stop if we hit end token (if we have one)
                 if next_token.item() == 0:  # Assuming 0 is a special token
                     break
         
         # Decode generated text
-        generated_text = tokenizer.decode(generated[0].tolist())
+        generated_text = tokenizer.decode(generated[0, :current_len].tolist())
         return generated_text
 
 
@@ -218,19 +236,17 @@ def train_gpt(model: GPT, tokenizer: BPETokenizer, corpus: List[str],
     all_text = " ".join(corpus)
     all_tokens = tokenizer.encode(all_text)
     
-    # Create training batches
-    def create_batches(tokens, batch_size, seq_len):
-        batches = []
-        for i in range(0, len(tokens) - seq_len, seq_len):
-            batch_tokens = tokens[i:i + seq_len + 1]
-            input_ids = torch.tensor(batch_tokens[:-1], dtype=torch.long)
-            targets = torch.tensor(batch_tokens[1:], dtype=torch.long)
-            batches.append((input_ids, targets))
-        return batches
-    
     # Training setup
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     seq_len = 32  # Context length
+    
+    # Pre-compute batches once and move to device (instead of recreating each epoch)
+    batches = []
+    for i in range(0, len(all_tokens) - seq_len, seq_len):
+        batch_tokens = all_tokens[i:i + seq_len + 1]
+        input_ids = torch.tensor(batch_tokens[:-1], dtype=torch.long).unsqueeze(0).to(device)
+        targets = torch.tensor(batch_tokens[1:], dtype=torch.long).unsqueeze(0).to(device)
+        batches.append((input_ids, targets))
     
     print(f"Training GPT model on {len(corpus)} documents...")
     print(f"Total tokens: {len(all_tokens)}")
@@ -238,13 +254,9 @@ def train_gpt(model: GPT, tokenizer: BPETokenizer, corpus: List[str],
     
     for epoch in range(epochs):
         model.train()
-        batches = create_batches(all_tokens, batch_size, seq_len)
         total_loss = 0
         
         for i, (input_ids, targets) in enumerate(batches):
-            input_ids = input_ids.unsqueeze(0).to(device)
-            targets = targets.unsqueeze(0).to(device)
-            
             optimizer.zero_grad()
             logits, loss = model(input_ids, targets)
             loss.backward()
