@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 class SelfAttention(nn.Module):
     def __init__(self, d_model, row_dim, col_dim):
@@ -21,7 +22,8 @@ class SelfAttention(nn.Module):
 
         sims = torch.matmul(q, k.transpose(-2, -1))
 
-        scaled_sims = sims / torch.sqrt(torch.tensor(k.size(-1), dtype=torch.float32))
+        # Use math.sqrt for efficiency instead of creating a tensor
+        scaled_sims = sims / math.sqrt(k.size(-1))
 
         attention_percents = F.softmax(scaled_sims, dim=-1)
 
@@ -57,7 +59,8 @@ class MaskedSelfAttention(nn.Module):
         
         sims= torch.matmul(q, k.transpose(-2, -1))
 
-        scaled_sims = sims / torch.sqrt(torch.tensor(k.size(-1), dtype=torch.float32))
+        # Use math.sqrt for efficiency instead of creating a tensor
+        scaled_sims = sims / math.sqrt(k.size(-1))
 
         if mask is not None:
             scaled_sims = scaled_sims.masked_fill(mask == 0, value=-1e20)
@@ -97,8 +100,8 @@ class Attention(nn.Module):
         # Fix transpose syntax - use -2, -1 for last two dimensions
         sims = torch.matmul(q, k.transpose(-2, -1))
 
-        # Fix scaling - use the last dimension of k
-        scaled_sims = sims / torch.sqrt(torch.tensor(k.size(-1), dtype=torch.float32))
+        # Use math.sqrt for efficiency instead of creating a tensor
+        scaled_sims = sims / math.sqrt(k.size(-1))
 
         if mask is not None:
             scaled_sims = scaled_sims.masked_fill(mask == 0, value=-1e20)
@@ -173,7 +176,8 @@ class MultiHeadAttention(nn.Module):
     
     def scaled_dot_product_attention(self, Q, K, V, mask=None):
         d_k = Q.size(-1)
-        scores = torch.matmul(Q, K.transpose(-2, -1)) / torch.sqrt(torch.tensor(d_k, dtype=torch.float32))
+        # Use math.sqrt for efficiency instead of creating a tensor
+        scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(d_k)
         
         if mask is not None:
             scores = scores.masked_fill(mask == 0, -1e9)
